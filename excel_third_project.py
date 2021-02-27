@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas
 from collections import namedtuple
 import numpy as np
+import shutil
 
 source_folder_path = "source_data\\"
 output_folder_path = "output\\"
@@ -75,12 +76,13 @@ def create_one_file_form_files(file_format):
     # Combine all files in the folder in one dataframe
     file_path = files_path_list[0]
     print(file_path)
-    df = pandas.read_excel(file_path, header=file_format.header_index)
+    df = pandas.read_excel(file_path, header=file_format.header_index, engine="xlrd")
     for idx in range(1, len(files_path_list)):
         print(files_path_list[idx])
-        df2 = pandas.read_excel(files_path_list[idx], header=file_format.header_index)
+        df2 = pandas.read_excel(files_path_list[idx], header=file_format.header_index, engine="xlrd")
         frames = [df, df2]
         df = pandas.concat(frames, ignore_index=True)
+        print(idx)
 
     # Merge the useful columns into one
     df[file_format.columns[2]] = " "
@@ -97,6 +99,9 @@ def create_one_file_form_files(file_format):
     df.rename(
         columns={df.columns[0]: "Transaction date", df.columns[1]: "Transaction amount", df.columns[2]: "Details"},
         inplace=True)
+
+    # Delete all empty row
+    df.dropna(subset=["Transaction date"], inplace=True)
 
     # Save dataframe into excel file
     df.to_excel(output_file_path)
@@ -178,22 +183,34 @@ def combine_two_files(file1, file2):
     return output_file_path
 
 
-def separate_file_by_date(file_path):
+def separate_file_by_date(file_path, folder_name):
     month_list = get_date_list(file_path, False)
     year_list = get_date_list(file_path, True)
+
+    if not os.path.exists(output_folder_path + folder_name):
+        os.makedirs(output_folder_path + folder_name)
+    else:
+        shutil.rmtree(output_folder_path + folder_name)
+        os.makedirs(output_folder_path + folder_name)
 
     df = pandas.read_excel(file_path, index_col=0)
     for date in month_list:
         df_filter = df["Transaction date"].str.contains(".*" + date + ".*")
         df2 = df[df_filter]
         df2 = df2.reset_index(drop=True)
-        df2.to_excel(output_folder_path + date + "_output.xlsx")
+        result = re.search("([0-9]{4})", date)
+        if result:
+            if not os.path.exists(output_folder_path + folder_name + "\\" + result.group(0) + " monthly output"):
+                os.makedirs(output_folder_path + folder_name + "\\" + result.group(0) + " monthly output")
+            df2.to_excel(output_folder_path + folder_name + "\\" + result.group(0) + " monthly output" + "\\" + date + "_output.xlsx")
+        else:
+            raise Exception("Can not detect year!")
 
     for date in year_list:
         df_filter = df["Transaction date"].str.contains(".*" + date + ".*")
         df2 = df[df_filter]
         df2 = df2.reset_index(drop=True)
-        df2.to_excel(output_folder_path + date + "_output.xlsx")
+        df2.to_excel(output_folder_path + folder_name + "\\" + date + "_output.xlsx")
 
 
 def get_date_list(file_path, only_year):
@@ -225,10 +242,20 @@ def add_more_columns(folder_path):
         files_path_list.append(folder_path + file)
 
 
+if not os.path.exists("output"):
+    os.makedirs("output")
+else:
+    shutil.rmtree("output")
+    os.makedirs("output")
+
 output_file_path_peti = create_one_file_form_files(peti)
 output_file_path_vanda = create_one_file_form_files(vanda)
 
 output_combined_file_path = combine_two_files(output_file_path_peti, output_file_path_vanda)
 
-separate_file_by_date(output_combined_file_path)
+separate_file_by_date(output_file_path_peti, "Peti separated files")
+separate_file_by_date(output_file_path_vanda, "Vanda separated files")
+separate_file_by_date(output_combined_file_path, "Combined separated files")
+
+
 add_more_columns(output_folder_path)

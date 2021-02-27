@@ -69,7 +69,6 @@ def get_value_list(file_path, column):
             value_list.append(value)
     if value_list.count(np.nan):
         value_list.remove(np.nan)
-    print(value_list)
     return value_list
 
 
@@ -84,16 +83,7 @@ def get_and_write_category_amount(exp_category, exp_category_amount, file_path, 
                 expense_in_Ft += dataframe.at[idx2, "Transaction amount"]
 
         dataframe_results.at[idx1, exp_category] = value
-        dataframe_results.at[idx1, exp_category_amount] = expense_in_Ft
-        #dataframe_results = dataframe_results.append({exp_category: value, exp_category_amount: expense_in_Ft}, ignore_index=True)
-
-    values = dataframe_results[exp_category_amount].abs().dropna()
-    labels = dataframe_results[exp_category].dropna()
-    print(values)
-    print(labels)
-
-    plt.pie(values, labels=labels)
-    #plt.show()
+        dataframe_results.at[idx1, exp_category_amount] = expense_in_Ft*(-1)
 
     return dataframe_results
 
@@ -143,24 +133,17 @@ def write_chart(file_path, chart_list):
 
 df = pandas.read_excel(file_path, index_col=0)
 df_config = pandas.read_excel(config_path, index_col=0)
-print(df)
-print(df_config)
-
 
 df["Expense description"] = ""
 df["Expense category"] = ""
 df["Expense other category"] = ""
 df["Expense nature"] = ""
-
-print(df)
+df["Found"] = ""
 
 df_results = pandas.DataFrame(columns=["Expense regex", "Expense amount",
                                        "Expense category", "Expense category amount",
                                        "Expense other category", "Expense other category amount",
                                        "Expense nature", "Expense nature amount"])
-
-print(df_results)
-
 
 for idx1, config in df_config.iterrows():
     expense_in_Ft = 0
@@ -170,18 +153,21 @@ for idx1, config in df_config.iterrows():
     expense_category = df_config.at[idx1, "Expense category"]
     expense_other_category = df_config.at[idx1, "Expense other category"]
     expense_nature = df_config.at[idx1, "Expense nature"]
-
     for idx2, row2 in df.iterrows():
 
         if re.search(regex_string, df.at[idx2, "Details"]):
-            print("Regex found" + regex_string)
+
             df.at[idx2, "Expense description"] = expense_description
             df.at[idx2, "Expense category"] = expense_category
             df.at[idx2, "Expense other category"] = expense_other_category
             df.at[idx2, "Expense nature"] = expense_nature
+            if not df.at[idx2, "Found"] == "progressed":
+                df.at[idx2, "Found"] = "progressed"
+            else:
+                raise Exception("Multiple found by regex on one row! Need investigation in row " + str(idx2))
             expense_in_Ft += df.at[idx2, "Transaction amount"]
 
-    df_results = df_results.append({"Expense regex": regex_string, "Expense amount": expense_in_Ft}, ignore_index=True)
+    df_results = df_results.append({"Expense regex": regex_string, "Expense amount": expense_in_Ft*(-1)}, ignore_index=True)
 
 
 df_results = get_and_write_category_amount("Expense category", "Expense category amount", config_path, df_results, df)
