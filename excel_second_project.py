@@ -1,24 +1,43 @@
+import sys
+
 import openpyxl
 from openpyxl import utils
 import re
 import numbers
 import pandas
 import numpy as np
-import matplotlib.pyplot as plt
+from collections import namedtuple
 import os
 
-output_folder_path = "output\\"
-file_name = "Combined_output.xlsx"
+output_folder = "output"
+combined_output_xlsx = "Combined_output.xlsx"
+peti_output_xlsx = "Peti_output"
+vanda_output_xlsx = "Vanda_output"
+combined_output_path = os.path.join(output_folder, combined_output_xlsx)
+peti_output_path = os.path.join(output_folder, peti_output_xlsx)
+vanda_output_path = os.path.join(output_folder, vanda_output_xlsx)
 
-file_path = output_folder_path + file_name
 config_path = "config.xlsx"
 
-wb = openpyxl.load_workbook(filename=file_path)
-ws = wb.active
-column_details = ws['D']
+Chart_config = namedtuple('File_format', ['category_col_name', 'category_value_col_name', 'start_cell', 'chart_type',
+                                          'scale_X', 'scale_Y'])
+str_exp_regex = "Expense regex"
+str_exp_amount = "Expense amount"
+str_exp_cat = "Expense category"
+str_exp_cat_amount = "Expense category amount"
+str_exp_o_cat = "Expense other category"
+str_exp_o_cat_amount = "Expense other category amount"
+str_exp_nature = "Expense nature"
+str_exp_nature_amount = "Expense nature amount"
+str_information = "Information"
+str_information_value = "Information value"
+str_exp_description = "Expense description"
+str_status = "Status"
 
-config_wb = openpyxl.load_workbook(filename='config.xlsx')
-config_ws = config_wb.active
+expense_category_ntpl = Chart_config(str_exp_cat, str_exp_cat_amount, "M2", 'column', 3, 1)
+expense_other_category_ntpl = Chart_config(str_exp_o_cat, str_exp_o_cat_amount, "M17", 'pie', 1, 1)
+expense_nature_ntpl = Chart_config(str_exp_nature, str_exp_nature_amount, "M32", 'pie', 1, 1)
+information_ntpl = Chart_config(str_information, str_information_value, "U17", 'pie', 1, 1)
 
 
 def get_column(column_name, worksheet):
@@ -46,7 +65,7 @@ def get_cell_value(row, column, worksheet):
 
 
 def get_regex_str(idx, dataframe):
-    regex_str = dataframe.at[idx, "Expense regex"]
+    regex_str = dataframe.at[idx, str_exp_regex]
     regex_mode = dataframe.at[idx, "Search for the word"]
     if regex_mode == True:
         regex_string = ".* " + regex_str + " .*"
@@ -54,7 +73,7 @@ def get_regex_str(idx, dataframe):
         regex_string = ".*" + regex_str + ".*"
     else:
         raise Exception("Can not detect regex mode!")
-    print("regex string: " + regex_string)
+    # print("regex string: " + regex_string)
     return regex_string
 
 
@@ -88,100 +107,122 @@ def get_and_write_category_amount(exp_category, exp_category_amount, file_path, 
     return dataframe_results
 
 
-def write_chart(file_path, chart_list):
+def write_chart(file_path, chart_config):
+
+    df_res = pandas.read_excel(file_path, index_col=0)
 
     writer = pandas.ExcelWriter(file_path, engine='xlsxwriter')
-    df_results.to_excel(writer, sheet_name='Sheet1')
+    df_res.to_excel(writer, sheet_name='Sheet1')
 
     workbook = writer.book
     worksheet = writer.sheets['Sheet1']
 
-    for chart in range(len(chart_list)):
-        cat = df_results[chart_list[chart][0]]
-        val = df_results[chart_list[chart][1]]
+    for chart_idx in range(len(chart_config)):
+        cat = df_res[chart_config[chart_idx].category_col_name]
+        val = df_res[chart_config[chart_idx].category_value_col_name]
 
-        cat_first_col = df_results.columns.get_loc(chart_list[chart][0])+1
+        cat_first_col = df_res.columns.get_loc(chart_config[chart_idx].category_col_name)+1
         cat_first_row = cat.index.get_loc(cat.first_valid_index())+1
-        cat_last_col = df_results.columns.get_loc(chart_list[chart][0])+1
+        cat_last_col = df_res.columns.get_loc(chart_config[chart_idx].category_col_name)+1
         cat_last_row = cat.index.get_loc(cat.last_valid_index())+1
 
-        val_first_col = df_results.columns.get_loc(chart_list[chart][1])+1
+        val_first_col = df_res.columns.get_loc(chart_config[chart_idx].category_value_col_name)+1
         val_first_row = val.index.get_loc(val.first_valid_index())+1
-        val_last_col = df_results.columns.get_loc(chart_list[chart][1])+1
+        val_last_col = df_res.columns.get_loc(chart_config[chart_idx].category_value_col_name)+1
         val_last_row = val.index.get_loc(val.last_valid_index())+1
 
-        pie_chart = (workbook.add_chart({'type': chart_list[chart][3]}))
+        pie_chart = (workbook.add_chart({'type': chart_config[chart_idx].chart_type}))
 
         pie_chart.add_series({
-            'name': chart_list[chart][0],
+            'name': chart_config[chart_idx].category_col_name,
             'categories': ['Sheet1', cat_first_row, cat_first_col, cat_last_row, cat_last_col],
             'values': ['Sheet1', val_first_row, val_first_col, val_last_row, val_last_col],
             'data_labels': {'value': True, 'percentage': True},
         })
 
         # Add a title.
-        pie_chart.set_title({'name': chart_list[chart][0]})
+        pie_chart.set_title({'name': chart_config[chart_idx].category_col_name})
 
         # Insert the chart into the worksheet.
-        worksheet.insert_chart(chart_list[chart][2], pie_chart, {'x_scale': 3, 'y_scale': 1})
+        worksheet.insert_chart(chart_config[chart_idx].start_cell, pie_chart,
+                               {'x_scale': chart_config[chart_idx].scale_X, 'y_scale': chart_config[chart_idx].scale_Y})
 
     # Close the Pandas Excel writer and output the Excel file.
     writer.close()
 
 
-# Expense regex;Search for the word;Expense description;Expense category;Other category;Expense nature
+def generate_expense_category_labels(file_path):
+    print()
+    print("Generating labels and charts on this file: " + os.path.basename(file_path))
+    print(file_path)
+    df = pandas.read_excel(file_path, index_col=0)
+    df_config = pandas.read_excel(config_path, index_col=0)
 
-df = pandas.read_excel(file_path, index_col=0)
-df_config = pandas.read_excel(config_path, index_col=0)
+    df[str_exp_description] = ""
+    df[str_exp_cat] = ""
+    df[str_exp_o_cat] = ""
+    df[str_exp_nature] = ""
+    df[str_status] = ""
 
-df["Expense description"] = ""
-df["Expense category"] = ""
-df["Expense other category"] = ""
-df["Expense nature"] = ""
-df["Found"] = ""
+    df_results = pandas.DataFrame(columns=[str_exp_regex, str_exp_amount,
+                                           str_exp_cat, str_exp_cat_amount,
+                                           str_exp_o_cat, str_exp_o_cat_amount,
+                                           str_exp_nature, str_exp_nature_amount,
+                                           str_information, str_information_value])
+    num_of_processed_rows = 0
+    for idx1, config in df_config.iterrows():
+        print("Progress: {}%".format(int((idx1 / len(df_config.index)) * 100)), end='\r')
+        expense_in_ft = 0
 
-df_results = pandas.DataFrame(columns=["Expense regex", "Expense amount",
-                                       "Expense category", "Expense category amount",
-                                       "Expense other category", "Expense other category amount",
-                                       "Expense nature", "Expense nature amount"])
+        regex_string = get_regex_str(idx1, df_config)
 
-for idx1, config in df_config.iterrows():
-    expense_in_Ft = 0
-    regex_string = get_regex_str(idx1, df_config)
+        expense_description = df_config.at[idx1, str_exp_description]
+        expense_category = df_config.at[idx1, str_exp_cat]
+        expense_other_category = df_config.at[idx1, str_exp_o_cat]
+        expense_nature = df_config.at[idx1, str_exp_nature]
 
-    expense_description = df_config.at[idx1, "Expense description"]
-    expense_category = df_config.at[idx1, "Expense category"]
-    expense_other_category = df_config.at[idx1, "Expense other category"]
-    expense_nature = df_config.at[idx1, "Expense nature"]
-    for idx2, row2 in df.iterrows():
+        for idx2, row2 in df.iterrows():
+            if re.search(regex_string, df.at[idx2, "Details"]):
+                df.at[idx2, str_exp_description] = expense_description
+                df.at[idx2, str_exp_cat] = expense_category
+                df.at[idx2, str_exp_o_cat] = expense_other_category
+                df.at[idx2, str_exp_nature] = expense_nature
+                if not df.at[idx2, str_status] == "progressed":
+                    df.at[idx2, str_status] = "progressed"
+                    num_of_processed_rows += 1
+                else:
+                    raise Exception("Multiple found by regex on one row! Need investigation in row " + str(idx2))
+                expense_in_ft += df.at[idx2, "Transaction amount"]
 
-        if re.search(regex_string, df.at[idx2, "Details"]):
+        df_results = df_results.append({str_exp_regex: regex_string, str_exp_amount: expense_in_ft*(-1)},
+                                       ignore_index=True)
 
-            df.at[idx2, "Expense description"] = expense_description
-            df.at[idx2, "Expense category"] = expense_category
-            df.at[idx2, "Expense other category"] = expense_other_category
-            df.at[idx2, "Expense nature"] = expense_nature
-            if not df.at[idx2, "Found"] == "progressed":
-                df.at[idx2, "Found"] = "progressed"
-            else:
-                raise Exception("Multiple found by regex on one row! Need investigation in row " + str(idx2))
-            expense_in_Ft += df.at[idx2, "Transaction amount"]
+    df_results.at[0, str_information] = "Nem feldolgozott sorok száma"
+    df_results.at[1, str_information] = "Feldolgozott sorok száma"
+    df_results.at[0, str_information_value] = len(df.index) - num_of_processed_rows
+    df_results.at[1, str_information_value] = num_of_processed_rows
 
-    df_results = df_results.append({"Expense regex": regex_string, "Expense amount": expense_in_Ft*(-1)}, ignore_index=True)
+    df_results = get_and_write_category_amount(str_exp_cat, str_exp_cat_amount, config_path, df_results, df)
+    df_results = get_and_write_category_amount(str_exp_o_cat, str_exp_o_cat_amount, config_path, df_results, df)
+    df_results = get_and_write_category_amount(str_exp_nature, str_exp_nature_amount, config_path, df_results, df)
+
+    df.to_excel(file_path)
+    result_file_name = os.path.basename(os.path.splitext(file_path)[0]) + "_result.xlsx"
+    result_file_path = os.path.join(os.path.dirname(file_path), result_file_name)
+    df_results.to_excel(result_file_path)
+
+    print("Expenses labelled succesfully! label rate: {}%".format(int((num_of_processed_rows/len(df.index))*100)))
+
+    chart_config_list = [expense_category_ntpl, expense_other_category_ntpl, expense_nature_ntpl, information_ntpl]
+    write_chart(result_file_path, chart_config_list)
+    print("Charts inserted")
 
 
-df_results = get_and_write_category_amount("Expense category", "Expense category amount", config_path, df_results, df)
-df_results = get_and_write_category_amount("Expense other category", "Expense other category amount", config_path, df_results, df)
-df_results = get_and_write_category_amount("Expense nature", "Expense nature amount", config_path, df_results, df)
+listOfFiles = list()
 
-df.to_excel(file_path)
+for (dirpath, dirnames, filenames) in os.walk("output"):
+    listOfFiles += [os.path.join(dirpath, file) for file in filenames]
 
-df_results.to_excel(output_folder_path + "Combined_output_results.xlsx")
+for file in listOfFiles:
+    generate_expense_category_labels(file)
 
-pie_chart_list = [["Expense category", "Expense category amount", "K2", 'column'],
-                  ["Expense other category", "Expense other category amount", "K17", 'pie'],
-                  ["Expense nature", "Expense nature amount", "K32", 'pie']]
-
-cell_list = ["K2", "K17", "K32"]
-
-write_chart(os.path.join(output_folder_path, "Combined_output_results.xlsx"), pie_chart_list)
